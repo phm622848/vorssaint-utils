@@ -94,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate, NSW
                 WindowMaximizer.shared.syncWithPreferences()
                 KeyboardDebounceService.shared.syncWithPreferences()
                 WindowLayoutService.shared.syncWithPreferences()
+                ClipboardHistoryService.shared.syncHotkey()
             }
             .store(in: &cancellables)
 

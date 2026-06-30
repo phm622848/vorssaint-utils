@@ -188,6 +188,7 @@ enum DefaultsKey {
     static let clipboardHistoryLimit = "clipboardHistoryLimit"
     static let clipboardHistorySkipSensitive = "clipboardHistorySkipSensitive"
     static let clipboardHistoryShortcutEnabled = "clipboardHistoryShortcutEnabled"
+    static let clipboardHistoryActivationMode = "clipboardHistoryActivationMode"
     static let clipboardHistoryShortcut = "clipboardHistoryShortcut"
 
     // Window Layout — manual window snapping and optional global shortcuts.
@@ -431,6 +432,7 @@ enum Defaults {
         DefaultsKey.clipboardHistoryLimit: 50,
         DefaultsKey.clipboardHistorySkipSensitive: true,
         DefaultsKey.clipboardHistoryShortcutEnabled: true,
+        DefaultsKey.clipboardHistoryActivationMode: ClipboardHistoryActivationMode.shortcut.rawValue,
         DefaultsKey.clipboardHistoryShortcut: GlobalShortcut.clipboardDefault.storageValue,
         DefaultsKey.windowLayoutShortcutsEnabled: false,
         DefaultsKey.windowLayoutShortcutLeft: GlobalShortcut.windowLayoutLeftDefault.storageValue,
@@ -560,6 +562,14 @@ enum Defaults {
 
     static func sanitizedClipboardHistoryLimit(_ value: Int) -> Int {
         allowedClipboardHistoryLimits.contains(value) ? value : 50
+    }
+
+    static func sanitizedClipboardHistoryActivationMode(_ rawValue: String?) -> ClipboardHistoryActivationMode {
+        guard let rawValue,
+              let mode = ClipboardHistoryActivationMode(rawValue: rawValue) else {
+            return .shortcut
+        }
+        return mode
     }
 
     static func sanitizedMonitorAlertCooldown(_ value: Int) -> Int {

@@ -59,6 +59,8 @@ final class ClipboardHistoryService: ObservableObject {
     @Published private(set) var entries: [ClipboardHistoryEntry] = []
     @Published private(set) var isRunning = false
     @Published private(set) var shortcutRegistrationFailed = false
+    @Published private(set) var doubleControlNeedsAccessibility = false
+    @Published private(set) var doubleControlRegistrationFailed = false
     @Published private(set) var quickBatchEntryIDs: Set<UUID> = []
     @Published var quickQuery = "" {
         didSet {
@@ -79,8 +81,12 @@ final class ClipboardHistoryService: ObservableObject {
     private var hotKeyRef: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
     private var registeredShortcut: GlobalShortcut?
+    private var doubleControlTap: CFMachPort?
+    private var doubleControlTapSource: CFRunLoopSource?
+    private var doubleControlTrigger = ClipboardHistoryDoubleControlTrigger()
     private var pasteTargetApp: NSRunningApplication?
     private let maxCharacters = 20_000
+    private let controlKeyCodes: Set<Int64> = [Int64(kVK_Control), Int64(kVK_RightControl)]
 
     private init() {
         load()
@@ -452,7 +458,20 @@ final class ClipboardHistoryService: ObservableObject {
     func syncHotkey() {
         let wanted = UserDefaults.standard.bool(forKey: DefaultsKey.clipboardHistoryEnabled)
             && UserDefaults.standard.bool(forKey: DefaultsKey.clipboardHistoryShortcutEnabled)
-        wanted ? registerHotkey() : unregisterHotkey()
+        guard wanted else {
+            unregisterHotkey()
+            unregisterDoubleControlTap()
+            return
+        }
+
+        switch activationMode {
+        case .shortcut:
+            unregisterDoubleControlTap()
+            registerHotkey()
+        case .doubleControl:
+            unregisterHotkey()
+            registerDoubleControlTap()
+        }
     }
 
     private func registerHotkey() {
@@ -498,6 +517,102 @@ final class ClipboardHistoryService: ObservableObject {
         hotKeyRef = nil
         registeredShortcut = nil
         shortcutRegistrationFailed = false
+    }
+
+    private var activationMode: ClipboardHistoryActivationMode {
+        Defaults.sanitizedClipboardHistoryActivationMode(
+            UserDefaults.standard.string(forKey: DefaultsKey.clipboardHistoryActivationMode)
+        )
+    }
+
+    private func registerDoubleControlTap() {
+        shortcutRegistrationFailed = false
+        guard Permissions.shared.accessibility else {
+            unregisterDoubleControlTap()
+            doubleControlNeedsAccessibility = true
+            return
+        }
+        if doubleControlTap != nil {
+            doubleControlNeedsAccessibility = false
+            doubleControlRegistrationFailed = false
+            return
+        }
+
+        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+            | CGEventMask(1 << CGEventType.flagsChanged.rawValue)
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .tailAppendEventTap,
+            options: .listenOnly,
+            eventsOfInterest: mask,
+            callback: { _, type, event, userInfo in
+                guard let userInfo else { return Unmanaged.passUnretained(event) }
+                let service = Unmanaged<ClipboardHistoryService>.fromOpaque(userInfo).takeUnretainedValue()
+                return service.handleDoubleControlEvent(type: type, event: event)
+            },
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
+        ) else {
+            doubleControlNeedsAccessibility = false
+            doubleControlRegistrationFailed = true
+            return
+        }
+
+        doubleControlTap = tap
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        doubleControlTapSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        doubleControlTrigger.reset()
+        doubleControlNeedsAccessibility = false
+        doubleControlRegistrationFailed = false
+    }
+
+    private func unregisterDoubleControlTap() {
+        if let tap = doubleControlTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+        }
+        if let source = doubleControlTapSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+        }
+        doubleControlTap = nil
+        doubleControlTapSource = nil
+        doubleControlTrigger.reset()
+        doubleControlNeedsAccessibility = false
+        doubleControlRegistrationFailed = false
+    }
+
+    private func handleDoubleControlEvent(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if let doubleControlTap { CGEvent.tapEnable(tap: doubleControlTap, enable: true) }
+            return Unmanaged.passUnretained(event)
+        }
+
+        switch type {
+        case .keyDown:
+            doubleControlTrigger.registerOtherKeyPress()
+        case .flagsChanged:
+            let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
+            let flags = GlobalShortcutModifiers(cgFlags: event.flags)
+            if controlKeyCodes.contains(keyCode) {
+                let controlDown = event.flags.contains(.maskControl)
+                let time = TimeInterval(event.timestamp) / 1_000_000_000.0
+                let triggered = doubleControlTrigger.registerControlChange(
+                    isDown: controlDown,
+                    otherModifiersActive: !flags.subtracting(.control).isEmpty,
+                    time: time
+                )
+                if triggered {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.toggleHistoryWindow()
+                    }
+                }
+            } else {
+                doubleControlTrigger.cancelSequence()
+            }
+        default:
+            break
+        }
+        return Unmanaged.passUnretained(event)
     }
 
     // MARK: - Quick window

@@ -8,6 +8,8 @@ struct PanelClipboardView: View {
     @ObservedObject private var history = ClipboardHistoryService.shared
     @AppStorage(DefaultsKey.clipboardHistoryEnabled) private var enabled = false
     @AppStorage(DefaultsKey.clipboardHistoryShortcutEnabled) private var shortcutEnabled = true
+    @AppStorage(DefaultsKey.clipboardHistoryActivationMode)
+    private var activationModeRaw = ClipboardHistoryActivationMode.shortcut.rawValue
     @State private var query = ""
     @State private var copiedID: UUID?
 
@@ -64,7 +66,7 @@ struct PanelClipboardView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if enabled, shortcutEnabled {
-                Text("\(text.shortcut): \(shortcut.displayString)")
+                Text("\(text.activation): \(activationDisplay)")
                     .font(.system(size: 9.5, weight: .medium, design: .rounded))
                     .foregroundStyle(.tertiary)
             }
@@ -94,7 +96,7 @@ struct PanelClipboardView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.mini)
-                .help(text.shortcut)
+                .help(text.openNow)
             }
         }
         .panelCard()
@@ -130,6 +132,19 @@ struct PanelClipboardView: View {
     private var shortcut: GlobalShortcut {
         GlobalShortcut.saved(for: DefaultsKey.clipboardHistoryShortcut,
                              fallback: .clipboardDefault)
+    }
+
+    private var activationMode: ClipboardHistoryActivationMode {
+        Defaults.sanitizedClipboardHistoryActivationMode(activationModeRaw)
+    }
+
+    private var activationDisplay: String {
+        switch activationMode {
+        case .shortcut:
+            return shortcut.displayString
+        case .doubleControl:
+            return text.activationModeDoubleControl
+        }
     }
 
     private func entryRow(_ entry: ClipboardHistoryEntry) -> some View {

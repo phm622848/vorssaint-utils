@@ -24,3 +24,4 @@ E2E/
 *.xcodeproj
 xcuserdata/
 .swiftpm/
+/.idea/

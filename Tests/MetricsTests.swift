@@ -205,6 +205,41 @@ struct MetricsTests {
                "clipboard history still skips URLs with obvious secret words")
         expect(ClipboardHistorySensitiveText.looksSensitive("abc1234567890-xyz-abc"),
                "clipboard history still skips compact secret-looking text")
+        expect(Defaults.sanitizedClipboardHistoryActivationMode("shortcut") == .shortcut,
+               "clipboard activation mode keeps the shortcut option")
+        expect(Defaults.sanitizedClipboardHistoryActivationMode("doubleControl") == .doubleControl,
+               "clipboard activation mode keeps the double-control option")
+        expect(Defaults.sanitizedClipboardHistoryActivationMode("invalid") == .shortcut,
+               "clipboard activation mode falls back to the shortcut option")
+        var doubleControl = ClipboardHistoryDoubleControlTrigger(pressWindow: 0.35)
+        expect(!doubleControl.registerControlChange(isDown: true, otherModifiersActive: false, time: 1.0),
+               "clipboard double-control waits for the second press")
+        expect(!doubleControl.registerControlChange(isDown: false, otherModifiersActive: false, time: 1.1),
+               "clipboard double-control ignores the release edge")
+        expect(doubleControl.registerControlChange(isDown: true, otherModifiersActive: false, time: 1.2),
+               "clipboard double-control triggers on a quick second press")
+        expect(!doubleControl.registerControlChange(isDown: false, otherModifiersActive: false, time: 1.3),
+               "clipboard double-control resets after firing")
+        doubleControl.reset()
+        expect(!doubleControl.registerControlChange(isDown: true, otherModifiersActive: false, time: 2.0),
+               "clipboard double-control starts a new sequence after reset")
+        doubleControl.registerOtherKeyPress()
+        expect(!doubleControl.registerControlChange(isDown: false, otherModifiersActive: false, time: 2.1),
+               "clipboard double-control keeps the key-up edge inert after another key cancels the sequence")
+        expect(!doubleControl.registerControlChange(isDown: true, otherModifiersActive: false, time: 2.2),
+               "clipboard double-control restarts after a control-combo cancellation")
+        expect(!doubleControl.registerControlChange(isDown: false, otherModifiersActive: false, time: 2.25),
+               "clipboard double-control still ignores the next release edge")
+        expect(!doubleControl.registerControlChange(isDown: true, otherModifiersActive: true, time: 2.3),
+               "clipboard double-control ignores presses with extra modifiers")
+        expect(!doubleControl.registerControlChange(isDown: false, otherModifiersActive: false, time: 2.35),
+               "clipboard double-control release after an invalid press stays inert")
+        expect(!doubleControl.registerControlChange(isDown: true, otherModifiersActive: false, time: 2.8),
+               "clipboard double-control restarts after the timeout window")
+        expect(!doubleControl.registerControlChange(isDown: false, otherModifiersActive: false, time: 2.9),
+               "clipboard double-control release after timeout stays inert")
+        expect(doubleControl.registerControlChange(isDown: true, otherModifiersActive: false, time: 3.0),
+               "clipboard double-control triggers again once a fresh pair completes")
 
         let maxCapacityStringJSON = Data(#"{"SPPowerDataType":[{"sppower_battery_health_info":{"sppower_battery_health_maximum_capacity":"93%"}}]}"#.utf8)
         expect(MaxCapacityProbe.percent(fromSystemProfilerJSON: maxCapacityStringJSON) == 93,

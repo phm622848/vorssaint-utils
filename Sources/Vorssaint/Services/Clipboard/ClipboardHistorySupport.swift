@@ -3,6 +3,63 @@
 
 import Foundation
 
+enum ClipboardHistoryActivationMode: String, CaseIterable, Identifiable {
+    case shortcut
+    case doubleControl
+
+    var id: String { rawValue }
+}
+
+struct ClipboardHistoryDoubleControlTrigger {
+    let pressWindow: TimeInterval
+
+    private(set) var controlIsDown = false
+    private(set) var tapCount = 0
+    private var lastTapTime = -TimeInterval.greatestFiniteMagnitude
+
+    init(pressWindow: TimeInterval = 0.35) {
+        self.pressWindow = pressWindow
+    }
+
+    mutating func registerControlChange(isDown: Bool,
+                                        otherModifiersActive: Bool,
+                                        time: TimeInterval) -> Bool {
+        guard isDown != controlIsDown else {
+            if otherModifiersActive { cancelSequence() }
+            return false
+        }
+
+        controlIsDown = isDown
+        guard isDown else { return false }
+        guard !otherModifiersActive else {
+            cancelSequence()
+            return false
+        }
+
+        tapCount = time - lastTapTime <= pressWindow ? (tapCount + 1) : 1
+        lastTapTime = time
+        if tapCount >= 2 {
+            cancelSequence()
+            return true
+        }
+        return false
+    }
+
+    mutating func registerOtherKeyPress() {
+        cancelSequence()
+    }
+
+    mutating func cancelSequence() {
+        tapCount = 0
+        lastTapTime = -TimeInterval.greatestFiniteMagnitude
+    }
+
+    mutating func reset() {
+        controlIsDown = false
+        cancelSequence()
+    }
+}
+
 struct ClipboardHistorySearchCandidate {
     var index: Int
     var text: String
